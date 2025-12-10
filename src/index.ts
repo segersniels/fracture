@@ -1,4 +1,4 @@
-import * as p from "@clack/prompts";
+import { search, select } from "@inquirer/prompts";
 import { program } from "commander";
 import { existsSync, readdirSync } from "fs";
 import { homedir } from "os";
@@ -107,7 +107,34 @@ function installDeps(repoRoot: string, worktreePath: string): void {
 
   if (existsSync(srcNodeModules)) {
     console.error("copying node_modules from source...");
-    Bun.spawnSync(["cp", "-R", srcNodeModules, dstNodeModules]);
+    Bun.spawnSync(["cp", "-Rc", srcNodeModules, dstNodeModules]);
+  }
+
+  const findEnvResult = exec(
+    [
+      "find",
+      ".",
+      "-name",
+      ".env*",
+      "-type",
+      "f",
+      "-not",
+      "-path",
+      "*/node_modules/*",
+    ],
+    { cwd: repoRoot }
+  );
+  if (findEnvResult.success && findEnvResult.stdout) {
+    const envFiles = findEnvResult.stdout
+      .split("\n")
+      .filter((f) => f.length > 0);
+    for (const envFile of envFiles) {
+      const relativePath = envFile.replace(/^\.\//, "");
+      const src = join(repoRoot, relativePath);
+      const dst = join(worktreePath, relativePath);
+      console.error(`copying ${relativePath} from source...`);
+      Bun.spawnSync(["cp", src, dst]);
+    }
   }
 
   let cmd: string[];
@@ -155,16 +182,15 @@ async function create(branch?: string): Promise<void> {
       process.exit(1);
     }
 
-    const result = await p.select({
+    selectedBranch = await search({
       message: "Select branch to checkout",
-      options: branches.map((b) => ({ label: b, value: b })),
+      source: (input) => {
+        const term = input?.toLowerCase() || "";
+        return branches
+          .filter((b) => b.toLowerCase().includes(term))
+          .map((b) => ({ name: b, value: b }));
+      },
     });
-
-    if (p.isCancel(result)) {
-      process.exit(1);
-    }
-
-    selectedBranch = result;
   }
 
   const fractureId = Date.now().toString();
@@ -222,15 +248,45 @@ function list(): void {
   for (const id of fractures) {
     const worktreePath = join(home, FRACTURE_DIR, repoName, id);
     const branch = getWorktreeBranch(worktreePath);
-    console.log(`${id}  ${branch}`);
+    console.log(`${id} <${branch}>`);
   }
 }
 
-async function deleteFracture(name?: string): Promise<void> {
+async function deleteFracture(
+  name?: string,
+  options?: { force?: boolean; all?: boolean }
+): Promise<void> {
   const repoName = getOriginalRepoName();
   if (!repoName) {
     console.error("not in a git repository");
     process.exit(1);
+  }
+
+  const home = homedir();
+  const fractures = getFractures();
+
+  if (fractures.length === 0) {
+    console.error("no fractures found");
+    process.exit(1);
+  }
+
+  if (options?.all) {
+    for (const f of fractures) {
+      const worktreePath = join(home, FRACTURE_DIR, repoName, f);
+      const cmd = ["git", "worktree", "remove", worktreePath];
+      if (options?.force) {
+        cmd.push("--force");
+      }
+
+      const result = execInherit(cmd);
+      if (result.success) {
+        console.error(`deleted ${f}`);
+      } else {
+        console.error(`failed to delete ${f}`);
+      }
+    }
+
+    return;
   }
 
   let selected: string;
@@ -238,28 +294,26 @@ async function deleteFracture(name?: string): Promise<void> {
   if (name) {
     selected = name;
   } else {
-    const fractures = getFractures();
-    if (fractures.length === 0) {
-      console.error("no fractures found");
-      process.exit(1);
-    }
-
-    const result = await p.select({
-      message: "Select fracture to delete",
-      options: fractures.map((f) => ({ label: f, value: f })),
+    const choices = fractures.map((f) => {
+      const worktreePath = join(home, FRACTURE_DIR, repoName, f);
+      const branch = getWorktreeBranch(worktreePath);
+      return { name: `${f} <${branch}>`, value: f };
     });
 
-    if (p.isCancel(result)) {
-      process.exit(1);
-    }
-
-    selected = result;
+    selected = await select({
+      message: "Select fracture to delete",
+      choices,
+    });
   }
 
-  const home = homedir();
   const worktreePath = join(home, FRACTURE_DIR, repoName, selected);
 
-  const result = execInherit(["git", "worktree", "remove", worktreePath]);
+  const cmd = ["git", "worktree", "remove", worktreePath];
+  if (options?.force) {
+    cmd.push("--force");
+  }
+
+  const result = execInherit(cmd);
   if (!result.success) {
     console.error("failed to remove worktree");
     process.exit(1);
@@ -289,8 +343,15 @@ program
 program
   .command("delete [name]")
   .description("Delete a fracture and its associated branch")
-  .action(async (name?: string) => {
-    await deleteFracture(name);
-  });
+  .option("-f, --force", "force delete even with uncommitted changes")
+  .option("-a, --all", "delete all fractures")
+  .action(
+    async (
+      name: string | undefined,
+      options: { force?: boolean; all?: boolean }
+    ) => {
+      await deleteFracture(name, options);
+    }
+  );
 
 program.parse();
