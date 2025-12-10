@@ -96,20 +96,7 @@ function getWorktreeBranch(path: string): string {
   return result.success ? result.stdout : "unknown";
 }
 
-function installDeps(repoRoot: string, worktreePath: string): void {
-  const packageJson = join(worktreePath, "package.json");
-  if (!existsSync(packageJson)) {
-    return;
-  }
-
-  const srcNodeModules = join(repoRoot, "node_modules");
-  const dstNodeModules = join(worktreePath, "node_modules");
-
-  if (existsSync(srcNodeModules)) {
-    console.error("copying node_modules from source...");
-    Bun.spawnSync(["cp", "-Rc", srcNodeModules, dstNodeModules]);
-  }
-
+function copyEnvFiles(repoRoot: string, worktreePath: string): void {
   const findEnvResult = exec(
     [
       "find",
@@ -124,6 +111,7 @@ function installDeps(repoRoot: string, worktreePath: string): void {
     ],
     { cwd: repoRoot }
   );
+
   if (findEnvResult.success && findEnvResult.stdout) {
     const envFiles = findEnvResult.stdout
       .split("\n")
@@ -135,6 +123,16 @@ function installDeps(repoRoot: string, worktreePath: string): void {
       console.error(`copying ${relativePath} from source...`);
       Bun.spawnSync(["cp", src, dst]);
     }
+  }
+}
+
+function installNodeDeps(repoRoot: string, worktreePath: string): void {
+  const srcNodeModules = join(repoRoot, "node_modules");
+  const dstNodeModules = join(worktreePath, "node_modules");
+
+  if (existsSync(srcNodeModules)) {
+    console.error("copying node_modules from source...");
+    Bun.spawnSync(["cp", "-Rc", srcNodeModules, dstNodeModules]);
   }
 
   let cmd: string[];
@@ -158,6 +156,32 @@ function installDeps(repoRoot: string, worktreePath: string): void {
   const result = execInherit(cmd, { cwd: worktreePath });
   if (!result.success) {
     console.error(`warning: failed to install dependencies`);
+  }
+}
+
+function installRustDeps(worktreePath: string): void {
+  console.error("fetching rust dependencies...");
+  const result = execInherit(["cargo", "fetch"], { cwd: worktreePath });
+  if (!result.success) {
+    console.error("warning: failed to fetch rust dependencies");
+  }
+}
+
+function installGoDeps(worktreePath: string): void {
+  console.error("downloading go modules...");
+  const result = execInherit(["go", "mod", "download"], { cwd: worktreePath });
+  if (!result.success) {
+    console.error("warning: failed to download go modules");
+  }
+}
+
+function installDeps(repoRoot: string, worktreePath: string): void {
+  if (existsSync(join(worktreePath, "package.json"))) {
+    installNodeDeps(repoRoot, worktreePath);
+  } else if (existsSync(join(worktreePath, "Cargo.toml"))) {
+    installRustDeps(worktreePath);
+  } else if (existsSync(join(worktreePath, "go.mod"))) {
+    installGoDeps(worktreePath);
   }
 }
 
@@ -217,6 +241,7 @@ async function create(branch?: string): Promise<void> {
     process.exit(1);
   }
 
+  copyEnvFiles(repoRoot, worktreePath);
   installDeps(repoRoot, worktreePath);
 
   const shell = process.env.SHELL || "/bin/sh";
