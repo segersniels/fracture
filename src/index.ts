@@ -74,13 +74,21 @@ function getBranches(repoRoot: string): string[] {
   return result.stdout.split("\n").filter((line) => line.length > 0);
 }
 
+function getFracturesDir(repoName: string): string {
+  return join(homedir(), FRACTURE_DIR, repoName);
+}
+
+function getFracturePath(repoName: string, id: string): string {
+  return join(getFracturesDir(repoName), id);
+}
+
 function getFractures(): string[] {
   const repoName = getOriginalRepoName();
   if (!repoName) {
     return [];
   }
 
-  const fracturesPath = join(homedir(), FRACTURE_DIR, repoName);
+  const fracturesPath = getFracturesDir(repoName);
   if (!existsSync(fracturesPath)) {
     return [];
   }
@@ -126,6 +134,12 @@ function copyEnvFiles(repoRoot: string, worktreePath: string): void {
   }
 }
 
+const PACKAGE_MANAGERS: Record<string, string[]> = {
+  "pnpm-lock.yaml": ["pnpm", "install"],
+  "yarn.lock": ["yarn", "install"],
+  "bun.lockb": ["bun", "install"],
+};
+
 function installNodeDeps(repoRoot: string, worktreePath: string): void {
   const srcNodeModules = join(repoRoot, "node_modules");
   const dstNodeModules = join(worktreePath, "node_modules");
@@ -135,27 +149,18 @@ function installNodeDeps(repoRoot: string, worktreePath: string): void {
     Bun.spawnSync(["cp", "-Rc", srcNodeModules, dstNodeModules]);
   }
 
-  let cmd: string[];
-  let pkgManager: string;
-
-  if (existsSync(join(worktreePath, "pnpm-lock.yaml"))) {
-    cmd = ["pnpm", "install"];
-    pkgManager = "pnpm";
-  } else if (existsSync(join(worktreePath, "yarn.lock"))) {
-    cmd = ["yarn", "install"];
-    pkgManager = "yarn";
-  } else if (existsSync(join(worktreePath, "bun.lockb"))) {
-    cmd = ["bun", "install"];
-    pkgManager = "bun";
-  } else {
-    cmd = ["npm", "install"];
-    pkgManager = "npm";
+  let cmd = ["npm", "install"];
+  for (const [lockfile, installCmd] of Object.entries(PACKAGE_MANAGERS)) {
+    if (existsSync(join(worktreePath, lockfile))) {
+      cmd = installCmd;
+      break;
+    }
   }
 
-  console.error(`installing dependencies with ${pkgManager}...`);
+  console.error(`installing dependencies with ${cmd[0]}...`);
   const result = execInherit(cmd, { cwd: worktreePath });
   if (!result.success) {
-    console.error(`warning: failed to install dependencies`);
+    console.error("warning: failed to install dependencies");
   }
 }
 
@@ -185,7 +190,25 @@ function installDeps(repoRoot: string, worktreePath: string): void {
   }
 }
 
-async function create(branch?: string): Promise<void> {
+async function selectBranch(repoRoot: string): Promise<string> {
+  const branches = getBranches(repoRoot);
+  if (branches.length === 0) {
+    console.error("no branches found");
+    process.exit(1);
+  }
+
+  return search({
+    message: "Select branch to checkout",
+    source: (input) => {
+      const term = input?.toLowerCase() || "";
+      return branches
+        .filter((b) => b.toLowerCase().includes(term))
+        .map((b) => ({ name: b, value: b }));
+    },
+  });
+}
+
+async function create(newBranch?: string): Promise<void> {
   const repoRoot = getRepoRoot();
   if (!repoRoot) {
     console.error("not in a git repository");
@@ -193,47 +216,12 @@ async function create(branch?: string): Promise<void> {
   }
 
   const repoName = basename(repoRoot);
-  const home = homedir();
-
-  let selectedBranch: string;
-
-  if (branch) {
-    selectedBranch = branch;
-  } else {
-    const branches = getBranches(repoRoot);
-    if (branches.length === 0) {
-      console.error("no branches found");
-      process.exit(1);
-    }
-
-    selectedBranch = await search({
-      message: "Select branch to checkout",
-      source: (input) => {
-        const term = input?.toLowerCase() || "";
-        return branches
-          .filter((b) => b.toLowerCase().includes(term))
-          .map((b) => ({ name: b, value: b }));
-      },
-    });
-  }
-
   const fractureId = Date.now().toString();
-  const worktreePath = join(home, FRACTURE_DIR, repoName, fractureId);
+  const worktreePath = getFracturePath(repoName, fractureId);
 
-  let cmd: string[];
-  if (branch) {
-    cmd = [
-      "git",
-      "worktree",
-      "add",
-      "-b",
-      branch,
-      worktreePath,
-      selectedBranch,
-    ];
-  } else {
-    cmd = ["git", "worktree", "add", worktreePath, selectedBranch];
-  }
+  const cmd = newBranch
+    ? ["git", "worktree", "add", "-b", newBranch, worktreePath]
+    : ["git", "worktree", "add", worktreePath, await selectBranch(repoRoot)];
 
   const result = execInherit(cmd, { cwd: repoRoot });
   if (!result.success) {
@@ -244,10 +232,9 @@ async function create(branch?: string): Promise<void> {
   copyEnvFiles(repoRoot, worktreePath);
   installDeps(repoRoot, worktreePath);
 
-  const shell = process.env.SHELL || "/bin/sh";
-
   console.error(`entering fracture: ${fractureId}`);
 
+  const shell = process.env.SHELL || "/bin/sh";
   const shellProc = Bun.spawn([shell], {
     cwd: worktreePath,
     stdin: "inherit",
@@ -267,14 +254,19 @@ function list(): void {
     process.exit(1);
   }
 
-  const home = homedir();
-  const fractures = getFractures();
-
-  for (const id of fractures) {
-    const worktreePath = join(home, FRACTURE_DIR, repoName, id);
-    const branch = getWorktreeBranch(worktreePath);
+  for (const id of getFractures()) {
+    const branch = getWorktreeBranch(getFracturePath(repoName, id));
     console.log(`${id} <${branch}>`);
   }
+}
+
+function removeWorktree(path: string, force?: boolean): boolean {
+  const cmd = ["git", "worktree", "remove", path];
+  if (force) {
+    cmd.push("--force");
+  }
+
+  return execInherit(cmd).success;
 }
 
 async function deleteFracture(
@@ -287,59 +279,37 @@ async function deleteFracture(
     process.exit(1);
   }
 
-  const home = homedir();
   const fractures = getFractures();
-
   if (fractures.length === 0) {
     console.error("no fractures found");
     process.exit(1);
   }
 
   if (options?.all) {
-    for (const f of fractures) {
-      const worktreePath = join(home, FRACTURE_DIR, repoName, f);
-      const cmd = ["git", "worktree", "remove", worktreePath];
-      if (options?.force) {
-        cmd.push("--force");
-      }
-
-      const result = execInherit(cmd);
-      if (result.success) {
-        console.error(`deleted ${f}`);
+    for (const id of fractures) {
+      const path = getFracturePath(repoName, id);
+      if (removeWorktree(path, options.force)) {
+        console.error(`deleted ${id}`);
       } else {
-        console.error(`failed to delete ${f}`);
+        console.error(`failed to delete ${id}`);
       }
     }
 
     return;
   }
 
-  let selected: string;
-
-  if (name) {
-    selected = name;
-  } else {
-    const choices = fractures.map((f) => {
-      const worktreePath = join(home, FRACTURE_DIR, repoName, f);
-      const branch = getWorktreeBranch(worktreePath);
-      return { name: `${f} <${branch}>`, value: f };
-    });
-
-    selected = await select({
+  const selected =
+    name ??
+    (await select({
       message: "Select fracture to delete",
-      choices,
-    });
-  }
+      choices: fractures.map((id) => {
+        const branch = getWorktreeBranch(getFracturePath(repoName, id));
+        return { name: `${id} <${branch}>`, value: id };
+      }),
+    }));
 
-  const worktreePath = join(home, FRACTURE_DIR, repoName, selected);
-
-  const cmd = ["git", "worktree", "remove", worktreePath];
-  if (options?.force) {
-    cmd.push("--force");
-  }
-
-  const result = execInherit(cmd);
-  if (!result.success) {
+  const path = getFracturePath(repoName, selected);
+  if (!removeWorktree(path, options?.force)) {
     console.error("failed to remove worktree");
     process.exit(1);
   }
