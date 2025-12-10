@@ -1,10 +1,6 @@
 # fracture
 
-Work on multiple git branches simultaneously without the complexity of git worktrees or submodules.
-
-## Why?
-
-When an AI tool (Claude Code, Codex, etc.) is grinding on a branch, you're stuck waiting. You can't switch branches without disrupting it. Fracture lets you spin up an isolated working directory in seconds so you can keep working on something else.
+A lightweight CLI for managing git worktrees. Create isolated working directories instantly and work on multiple branches in parallel.
 
 ## Install
 
@@ -12,60 +8,57 @@ When an AI tool (Claude Code, Codex, etc.) is grinding on a branch, you're stuck
 curl -fsSL https://raw.githubusercontent.com/segersniels/fracture/master/install.sh | bash
 ```
 
+<details>
+<summary>Build from source</summary>
+
+Requires [Bun](https://bun.sh).
+
+```bash
+git clone https://github.com/segersniels/fracture.git
+cd fracture
+bun install
+make install
+```
+
+</details>
+
 ## Usage
 
 ```bash
-# Create a new fracture - shows branch selector
+# Create a new worktree - interactive branch selection with search
 fracture
 
-# Create a new fracture with a new branch off the selected base
+# Create a new worktree with a new branch off the selected base
 fracture -b my-feature
 
-# List all fractures for current repo
-fracture list
+# List all active worktrees
 fracture ls
 
-# Delete a fracture - shows selector if no name provided
+# Delete a worktree
 fracture delete
-fracture delete <id>
+fracture delete -f  # force delete with uncommitted changes
 ```
 
 ## How it works
 
-Fracture is a thin wrapper around `git worktree`. When you run `fracture`:
+Fracture wraps `git worktree` with a simpler interface. When you run `fracture`:
 
-1. Shows a branch selector
-2. Creates a worktree at `~/.fracture/<repo>/<id>/`
-3. Drops you into a subshell in that directory
+1. Select a branch (type to search)
+2. A worktree is created at `~/.fracture/<repo>/<id>/`
+3. `node_modules` and `.env` files are copied from your source
+4. Dependencies are installed
+5. You're dropped into a subshell in the new directory
 
-The worktree shares the same git history, remotes, and objects as your original repo. Commits made in a fracture are immediately visible in the original repo. You can push, pull, and do whatever you normally do with git.
+Worktrees share git history, remotes, and objects with the original repo. Commits are immediately visible across all worktrees. When you're done, `exit` the shell or close the terminal.
 
-When you're done, just `exit` the shell or close the terminal tab.
+## Use cases
 
-## Example
+- **Parallel debugging** - Run two branches side by side to compare behavior
+- **Quick hotfixes** - Start a fix without disrupting your current work
+- **Code review** - Check out a PR branch while keeping your work intact
+- **Long-running tasks** - Let CI or builds run in one worktree while you continue elsewhere
+- **AI pair programming** - Let an AI agent work on one branch while you continue on another
 
-```bash
-~/projects/myapp (feat/ai-working) $ fracture
-# Select "develop" from the list
-entering fracture: 1733912345
+## License
 
-~/.fracture/myapp/1733912345 (develop) $ git checkout -b hotfix/urgent-bug
-# ... fix the bug, commit, push ...
-~/.fracture/myapp/1733912345 (hotfix/urgent-bug) $ exit
-
-exited fracture: 1733912345
-~/projects/myapp (feat/ai-working) $ # AI is still working, undisturbed
-```
-
-## Cleanup
-
-```bash
-# Interactive delete
-fracture delete
-
-# Delete specific fracture
-fracture delete 1733912345
-
-# Manual cleanup (if needed)
-git worktree remove ~/.fracture/myapp/1733912345
-```
+MIT
