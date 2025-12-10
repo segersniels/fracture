@@ -1,9 +1,8 @@
-#!/usr/bin/env bun
-import { program } from "commander";
 import * as p from "@clack/prompts";
-import { homedir } from "os";
-import { join, basename, isAbsolute } from "path";
+import { program } from "commander";
 import { existsSync, readdirSync } from "fs";
+import { homedir } from "os";
+import { basename, isAbsolute, join } from "path";
 
 const FRACTURE_DIR = ".fracture";
 
