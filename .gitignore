@@ -1,0 +1,5 @@
+node_modules/
+fracture
+fracture-darwin-arm64
+go/
+.claude/
