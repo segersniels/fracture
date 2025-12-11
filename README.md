@@ -2,6 +2,10 @@
 
 A lightweight CLI for managing git worktrees. Create isolated working directories instantly and work on multiple branches in parallel.
 
+<p align="center">
+  <img src="./.github/logo.png" alt="Fracture" width="35%" />
+</p>
+
 ## Install
 
 ```bash
