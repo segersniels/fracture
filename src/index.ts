@@ -11,7 +11,7 @@ const FRACTURE_DIR = ".fracture";
 function exec(
   cmd: string[],
   options?: { cwd?: string }
-): { stdout: string; success: boolean } {
+): { stdout: string; stderr: string; success: boolean } {
   const result = Bun.spawnSync(cmd, {
     cwd: options?.cwd,
     stdout: "pipe",
@@ -20,21 +20,9 @@ function exec(
 
   return {
     stdout: result.stdout.toString().trim(),
+    stderr: result.stderr.toString().trim(),
     success: result.exitCode === 0,
   };
-}
-
-function execInherit(
-  cmd: string[],
-  options?: { cwd?: string }
-): { success: boolean } {
-  const result = Bun.spawnSync(cmd, {
-    cwd: options?.cwd,
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-
-  return { success: result.exitCode === 0 };
 }
 
 function getRepoRoot(): string | null {
@@ -212,6 +200,7 @@ async function installNodeDeps(worktreePath: string): Promise<string | null> {
 
   const proc = Bun.spawn(cmd, {
     cwd: worktreePath,
+    stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -226,6 +215,7 @@ async function installNodeDeps(worktreePath: string): Promise<string | null> {
 async function installRustDeps(worktreePath: string): Promise<string | null> {
   const proc = Bun.spawn(["cargo", "fetch"], {
     cwd: worktreePath,
+    stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -240,6 +230,7 @@ async function installRustDeps(worktreePath: string): Promise<string | null> {
 async function installGoDeps(worktreePath: string): Promise<string | null> {
   const proc = Bun.spawn(["go", "mod", "download"], {
     cwd: worktreePath,
+    stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -322,17 +313,19 @@ async function create(newBranch?: string): Promise<void> {
     }
   }
 
+  const status = shimmer("Preparing your fracture...");
+
   const cmd = newBranch
     ? ["git", "worktree", "add", "-b", newBranch, worktreePath]
     : ["git", "worktree", "add", worktreePath, branch];
 
-  const result = execInherit(cmd, { cwd: repoRoot });
+  const result = exec(cmd, { cwd: repoRoot });
   if (!result.success) {
-    console.error("failed to create worktree");
+    status.stop();
+    console.error("failed to create worktree:");
+    console.error(result.stderr);
     process.exit(1);
   }
-
-  const status = shimmer("Preparing your fracture...");
   status.update("Copying environment files...");
   await copyEnvFiles(repoRoot, worktreePath);
   const error = await installDeps(repoRoot, worktreePath, status.update);
@@ -343,7 +336,7 @@ async function create(newBranch?: string): Promise<void> {
     console.error(error);
   }
 
-  console.info(`entering fracture: ${fractureId}`);
+  console.info("Entered fracture. Type 'exit' to return.");
 
   const shell = process.env.SHELL || "/bin/sh";
   const shellProc = Bun.spawn([shell], {
@@ -355,7 +348,61 @@ async function create(newBranch?: string): Promise<void> {
 
   await shellProc.exited;
 
-  console.info(`exited fracture: ${fractureId}`);
+  console.info("Exited fracture.");
+}
+
+async function enter(name?: string): Promise<void> {
+  const repoName = getOriginalRepoName();
+  if (!repoName) {
+    console.error("not in a git repository");
+    process.exit(1);
+  }
+
+  const fractures = getFractures(repoName);
+  if (fractures.length === 0) {
+    console.error("no fractures found");
+    process.exit(1);
+  }
+
+  let selected: string;
+  if (name) {
+    selected = name;
+  } else {
+    try {
+      selected = await select({
+        message: "Select fracture to enter",
+        choices: (() => {
+          const worktrees = getWorktreesById(repoName);
+          return fractures.map((id) => {
+            const branch = worktrees.get(id) ?? "unknown";
+            return { name: `${id} <${branch}>`, value: id };
+          });
+        })(),
+      });
+    } catch {
+      process.exit(0);
+    }
+  }
+
+  const worktreePath = getFracturePath(repoName, selected);
+  if (!existsSync(worktreePath)) {
+    console.error("fracture not found");
+    process.exit(1);
+  }
+
+  console.info("Entered fracture. Type 'exit' to return.");
+
+  const shell = process.env.SHELL || "/bin/sh";
+  const shellProc = Bun.spawn([shell], {
+    cwd: worktreePath,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+
+  await shellProc.exited;
+
+  console.info("Exited fracture.");
 }
 
 function list(): void {
@@ -463,6 +510,13 @@ program
   .description("List all fractures for the current repository")
   .action(() => {
     list();
+  });
+
+program
+  .command("enter [name]")
+  .description("Enter an existing fracture")
+  .action(async (name: string | undefined) => {
+    await enter(name);
   });
 
 program
