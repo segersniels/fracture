@@ -37,21 +37,6 @@ function execInherit(
   return { success: result.exitCode === 0 };
 }
 
-async function execInheritAsync(
-  cmd: string[],
-  options?: { cwd?: string }
-): Promise<{ success: boolean }> {
-  const proc = Bun.spawn(cmd, {
-    cwd: options?.cwd,
-    stdin: "inherit",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-
-  const exitCode = await proc.exited;
-  return { success: exitCode === 0 };
-}
-
 function getRepoRoot(): string | null {
   const result = exec(["git", "rev-parse", "--show-toplevel"]);
   return result.success ? result.stdout : null;
@@ -216,7 +201,7 @@ async function copyNodeModules(
   }
 }
 
-async function installNodeDeps(worktreePath: string): Promise<void> {
+async function installNodeDeps(worktreePath: string): Promise<string | null> {
   let cmd = ["npm", "install"];
   for (const [lockfile, installCmd] of Object.entries(PACKAGE_MANAGERS)) {
     if (existsSync(join(worktreePath, lockfile))) {
@@ -225,41 +210,58 @@ async function installNodeDeps(worktreePath: string): Promise<void> {
     }
   }
 
-  const result = await execInheritAsync(cmd, { cwd: worktreePath });
-  if (!result.success) {
-    console.warn("warning: failed to install dependencies");
+  const proc = Bun.spawn(cmd, {
+    cwd: worktreePath,
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    return await new Response(proc.stderr).text();
   }
+
+  return null;
 }
 
-async function installRustDeps(worktreePath: string): Promise<void> {
-  const result = await execInheritAsync(["cargo", "fetch"], {
+async function installRustDeps(worktreePath: string): Promise<string | null> {
+  const proc = Bun.spawn(["cargo", "fetch"], {
     cwd: worktreePath,
+    stdout: "pipe",
+    stderr: "pipe",
   });
-  if (!result.success) {
-    console.warn("warning: failed to fetch rust dependencies");
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    return await new Response(proc.stderr).text();
   }
+
+  return null;
 }
 
-async function installGoDeps(worktreePath: string): Promise<void> {
-  const result = await execInheritAsync(["go", "mod", "download"], {
+async function installGoDeps(worktreePath: string): Promise<string | null> {
+  const proc = Bun.spawn(["go", "mod", "download"], {
     cwd: worktreePath,
+    stdout: "pipe",
+    stderr: "pipe",
   });
-  if (!result.success) {
-    console.warn("warning: failed to download go modules");
+  const exitCode = await proc.exited;
+  if (exitCode !== 0) {
+    return await new Response(proc.stderr).text();
   }
+
+  return null;
 }
 
 async function installDeps(
   repoRoot: string,
   worktreePath: string,
   onStatus: (text: string) => void
-): Promise<void> {
+): Promise<string | null> {
   const isNode = existsSync(join(worktreePath, "package.json"));
   const isRust = existsSync(join(worktreePath, "Cargo.toml"));
   const isGo = existsSync(join(worktreePath, "go.mod"));
 
   if (!isNode && !isRust && !isGo) {
-    return;
+    return null;
   }
 
   if (isNode) {
@@ -270,12 +272,14 @@ async function installDeps(
   onStatus("Arranging dependencies...");
 
   if (isNode) {
-    await installNodeDeps(worktreePath);
+    return await installNodeDeps(worktreePath);
   } else if (isRust) {
-    await installRustDeps(worktreePath);
+    return await installRustDeps(worktreePath);
   } else if (isGo) {
-    await installGoDeps(worktreePath);
+    return await installGoDeps(worktreePath);
   }
+
+  return null;
 }
 
 async function selectBranch(repoRoot: string): Promise<string> {
@@ -331,8 +335,13 @@ async function create(newBranch?: string): Promise<void> {
   const status = shimmer("Preparing your fracture...");
   status.update("Copying environment files...");
   await copyEnvFiles(repoRoot, worktreePath);
-  await installDeps(repoRoot, worktreePath, status.update);
+  const error = await installDeps(repoRoot, worktreePath, status.update);
   status.stop();
+
+  if (error) {
+    console.error("failed to install dependencies:");
+    console.error(error);
+  }
 
   console.info(`entering fracture: ${fractureId}`);
 
