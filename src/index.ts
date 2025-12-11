@@ -4,6 +4,8 @@ import { existsSync, readdirSync } from "fs";
 import { homedir } from "os";
 import { basename, isAbsolute, join } from "path";
 
+import { shimmer } from "./utils/shimmer";
+
 const FRACTURE_DIR = ".fracture";
 
 function exec(
@@ -33,6 +35,21 @@ function execInherit(
   });
 
   return { success: result.exitCode === 0 };
+}
+
+async function execInheritAsync(
+  cmd: string[],
+  options?: { cwd?: string }
+): Promise<{ success: boolean }> {
+  const proc = Bun.spawn(cmd, {
+    cwd: options?.cwd,
+    stdin: "inherit",
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+
+  const exitCode = await proc.exited;
+  return { success: exitCode === 0 };
 }
 
 function getRepoRoot(): string | null {
@@ -82,12 +99,7 @@ function getFracturePath(repoName: string, id: string): string {
   return join(getFracturesDir(repoName), id);
 }
 
-function getFractures(): string[] {
-  const repoName = getOriginalRepoName();
-  if (!repoName) {
-    return [];
-  }
-
+function getFractures(repoName: string): string[] {
   const fracturesPath = getFracturesDir(repoName);
   if (!existsSync(fracturesPath)) {
     return [];
@@ -98,17 +110,62 @@ function getFractures(): string[] {
     .map((entry) => entry.name);
 }
 
-function getWorktreeBranch(path: string): string {
-  const result = exec(["git", "-C", path, "rev-parse", "--abbrev-ref", "HEAD"]);
+function getWorktreesById(repoName: string): Map<string, string> {
+  const fracturesPath = getFracturesDir(repoName);
+  const result = exec(["git", "worktree", "list", "--porcelain"]);
+  const map = new Map<string, string>();
+  if (!result.success) {
+    return map;
+  }
 
-  return result.success ? result.stdout : "unknown";
+  let currentPath: string | null = null;
+  let currentBranch = "unknown";
+  for (const line of result.stdout.split("\n")) {
+    if (line.startsWith("worktree ")) {
+      if (currentPath) {
+        const id = currentPath.startsWith(fracturesPath)
+          ? currentPath.slice(fracturesPath.length + 1).split("/")[0]
+          : null;
+        if (id) {
+          map.set(id, currentBranch);
+        }
+      }
+
+      currentPath = line.slice("worktree ".length).trim();
+      currentBranch = "unknown";
+      continue;
+    }
+
+    if (line.startsWith("branch ")) {
+      currentBranch = line
+        .slice("branch ".length)
+        .trim()
+        .replace(/^refs\/heads\//, "");
+    }
+  }
+
+  if (currentPath) {
+    const id = currentPath.startsWith(fracturesPath)
+      ? currentPath.slice(fracturesPath.length + 1).split("/")[0]
+      : null;
+    if (id) {
+      map.set(id, currentBranch);
+    }
+  }
+
+  return map;
 }
 
-function copyEnvFiles(repoRoot: string, worktreePath: string): void {
+async function copyEnvFiles(
+  repoRoot: string,
+  worktreePath: string
+): Promise<void> {
   const findEnvResult = exec(
     [
       "find",
       ".",
+      "-maxdepth",
+      "3",
       "-name",
       ".env*",
       "-type",
@@ -128,8 +185,8 @@ function copyEnvFiles(repoRoot: string, worktreePath: string): void {
       const relativePath = envFile.replace(/^\.\//, "");
       const src = join(repoRoot, relativePath);
       const dst = join(worktreePath, relativePath);
-      console.error(`copying ${relativePath} from source...`);
-      Bun.spawnSync(["cp", src, dst]);
+      const proc = Bun.spawn(["cp", src, dst]);
+      await proc.exited;
     }
   }
 }
@@ -138,17 +195,28 @@ const PACKAGE_MANAGERS: Record<string, string[]> = {
   "pnpm-lock.yaml": ["pnpm", "install"],
   "yarn.lock": ["yarn", "install"],
   "bun.lockb": ["bun", "install"],
+  "bun.lock": ["bun", "install"],
 };
 
-function installNodeDeps(repoRoot: string, worktreePath: string): void {
+async function copyNodeModules(
+  repoRoot: string,
+  worktreePath: string
+): Promise<void> {
   const srcNodeModules = join(repoRoot, "node_modules");
   const dstNodeModules = join(worktreePath, "node_modules");
 
   if (existsSync(srcNodeModules)) {
-    console.error("copying node_modules from source...");
-    Bun.spawnSync(["cp", "-Rc", srcNodeModules, dstNodeModules]);
-  }
+    const cpArgs =
+      process.platform === "darwin"
+        ? ["cp", "-Rc", srcNodeModules, dstNodeModules]
+        : ["cp", "-R", srcNodeModules, dstNodeModules];
 
+    const proc = Bun.spawn(cpArgs, { stdin: "ignore" });
+    await proc.exited;
+  }
+}
+
+async function installNodeDeps(worktreePath: string): Promise<void> {
   let cmd = ["npm", "install"];
   for (const [lockfile, installCmd] of Object.entries(PACKAGE_MANAGERS)) {
     if (existsSync(join(worktreePath, lockfile))) {
@@ -157,36 +225,56 @@ function installNodeDeps(repoRoot: string, worktreePath: string): void {
     }
   }
 
-  console.error(`installing dependencies with ${cmd[0]}...`);
-  const result = execInherit(cmd, { cwd: worktreePath });
+  const result = await execInheritAsync(cmd, { cwd: worktreePath });
   if (!result.success) {
-    console.error("warning: failed to install dependencies");
+    console.warn("warning: failed to install dependencies");
   }
 }
 
-function installRustDeps(worktreePath: string): void {
-  console.error("fetching rust dependencies...");
-  const result = execInherit(["cargo", "fetch"], { cwd: worktreePath });
+async function installRustDeps(worktreePath: string): Promise<void> {
+  const result = await execInheritAsync(["cargo", "fetch"], {
+    cwd: worktreePath,
+  });
   if (!result.success) {
-    console.error("warning: failed to fetch rust dependencies");
+    console.warn("warning: failed to fetch rust dependencies");
   }
 }
 
-function installGoDeps(worktreePath: string): void {
-  console.error("downloading go modules...");
-  const result = execInherit(["go", "mod", "download"], { cwd: worktreePath });
+async function installGoDeps(worktreePath: string): Promise<void> {
+  const result = await execInheritAsync(["go", "mod", "download"], {
+    cwd: worktreePath,
+  });
   if (!result.success) {
-    console.error("warning: failed to download go modules");
+    console.warn("warning: failed to download go modules");
   }
 }
 
-function installDeps(repoRoot: string, worktreePath: string): void {
-  if (existsSync(join(worktreePath, "package.json"))) {
-    installNodeDeps(repoRoot, worktreePath);
-  } else if (existsSync(join(worktreePath, "Cargo.toml"))) {
-    installRustDeps(worktreePath);
-  } else if (existsSync(join(worktreePath, "go.mod"))) {
-    installGoDeps(worktreePath);
+async function installDeps(
+  repoRoot: string,
+  worktreePath: string,
+  onStatus: (text: string) => void
+): Promise<void> {
+  const isNode = existsSync(join(worktreePath, "package.json"));
+  const isRust = existsSync(join(worktreePath, "Cargo.toml"));
+  const isGo = existsSync(join(worktreePath, "go.mod"));
+
+  if (!isNode && !isRust && !isGo) {
+    return;
+  }
+
+  if (isNode) {
+    onStatus("Flibbertigibbeting modules...");
+    await copyNodeModules(repoRoot, worktreePath);
+  }
+
+  onStatus("Arranging dependencies...");
+
+  if (isNode) {
+    await installNodeDeps(worktreePath);
+  } else if (isRust) {
+    await installRustDeps(worktreePath);
+  } else if (isGo) {
+    await installGoDeps(worktreePath);
   }
 }
 
@@ -219,9 +307,20 @@ async function create(newBranch?: string): Promise<void> {
   const fractureId = Date.now().toString();
   const worktreePath = getFracturePath(repoName, fractureId);
 
+  let branch: string;
+  if (newBranch) {
+    branch = newBranch;
+  } else {
+    try {
+      branch = await selectBranch(repoRoot);
+    } catch {
+      process.exit(0);
+    }
+  }
+
   const cmd = newBranch
     ? ["git", "worktree", "add", "-b", newBranch, worktreePath]
-    : ["git", "worktree", "add", worktreePath, await selectBranch(repoRoot)];
+    : ["git", "worktree", "add", worktreePath, branch];
 
   const result = execInherit(cmd, { cwd: repoRoot });
   if (!result.success) {
@@ -229,10 +328,13 @@ async function create(newBranch?: string): Promise<void> {
     process.exit(1);
   }
 
-  copyEnvFiles(repoRoot, worktreePath);
-  installDeps(repoRoot, worktreePath);
+  const status = shimmer("Preparing your fracture...");
+  status.update("Copying environment files...");
+  await copyEnvFiles(repoRoot, worktreePath);
+  await installDeps(repoRoot, worktreePath, status.update);
+  status.stop();
 
-  console.error(`entering fracture: ${fractureId}`);
+  console.info(`entering fracture: ${fractureId}`);
 
   const shell = process.env.SHELL || "/bin/sh";
   const shellProc = Bun.spawn([shell], {
@@ -244,7 +346,7 @@ async function create(newBranch?: string): Promise<void> {
 
   await shellProc.exited;
 
-  console.error(`exited fracture: ${fractureId}`);
+  console.info(`exited fracture: ${fractureId}`);
 }
 
 function list(): void {
@@ -254,19 +356,23 @@ function list(): void {
     process.exit(1);
   }
 
-  for (const id of getFractures()) {
-    const branch = getWorktreeBranch(getFracturePath(repoName, id));
+  const worktrees = getWorktreesById(repoName);
+  for (const id of getFractures(repoName)) {
+    const branch = worktrees.get(id) ?? "unknown";
     console.log(`${id} <${branch}>`);
   }
 }
 
-function removeWorktree(path: string, force?: boolean): boolean {
+async function removeWorktree(path: string, force?: boolean): Promise<boolean> {
   const cmd = ["git", "worktree", "remove", path];
   if (force) {
     cmd.push("--force");
   }
 
-  return execInherit(cmd).success;
+  const proc = Bun.spawn(cmd, { stdout: "ignore", stderr: "ignore" });
+  const exitCode = await proc.exited;
+
+  return exitCode === 0;
 }
 
 async function deleteFracture(
@@ -279,42 +385,57 @@ async function deleteFracture(
     process.exit(1);
   }
 
-  const fractures = getFractures();
+  const fractures = getFractures(repoName);
   if (fractures.length === 0) {
     console.error("no fractures found");
     process.exit(1);
   }
 
   if (options?.all) {
+    const status = shimmer("Deleting all fractures...");
     for (const id of fractures) {
       const path = getFracturePath(repoName, id);
-      if (removeWorktree(path, options.force)) {
-        console.error(`deleted ${id}`);
-      } else {
+      if (!(await removeWorktree(path, options.force))) {
+        status.stop();
         console.error(`failed to delete ${id}`);
       }
     }
+    status.stop();
 
     return;
   }
 
-  const selected =
-    name ??
-    (await select({
-      message: "Select fracture to delete",
-      choices: fractures.map((id) => {
-        const branch = getWorktreeBranch(getFracturePath(repoName, id));
-        return { name: `${id} <${branch}>`, value: id };
-      }),
-    }));
+  let selected: string;
+  if (name) {
+    selected = name;
+  } else {
+    try {
+      selected = await select({
+        message: "Select fracture to delete",
+        choices: (() => {
+          const worktrees = getWorktreesById(repoName);
+          return fractures.map((id) => {
+            const branch = worktrees.get(id) ?? "unknown";
+            return { name: `${id} <${branch}>`, value: id };
+          });
+        })(),
+      });
+    } catch {
+      process.exit(0);
+    }
+  }
 
   const path = getFracturePath(repoName, selected);
-  if (!removeWorktree(path, options?.force)) {
+  const status = shimmer("Deleting fracture...");
+  const success = await removeWorktree(path, options?.force);
+  status.stop();
+
+  if (!success) {
     console.error("failed to remove worktree");
     process.exit(1);
   }
 
-  console.error(`deleted ${selected}`);
+  console.info(`deleted ${selected}`);
 }
 
 program
