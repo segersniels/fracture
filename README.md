@@ -38,6 +38,9 @@ fracture -b my-feature
 # List all active worktrees
 fracture ls
 
+# Re-enter an existing worktree
+fracture enter
+
 # Delete a worktree
 fracture delete
 fracture delete -f  # force delete with uncommitted changes
