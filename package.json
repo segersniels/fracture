@@ -3,7 +3,10 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "build": "bun build src/index.ts --compile --outfile fracture"
+    "build": "make build",
+    "lint": "eslint src/",
+    "lint:fix": "eslint src/ --fix",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@clack/prompts": "^0.11.0",
@@ -11,6 +14,14 @@
   },
   "devDependencies": {
     "@types/bun": "latest",
+    "@typescript-eslint/eslint-plugin": "^8.49.0",
+    "@typescript-eslint/parser": "^8.49.0",
+    "eslint": "^9.39.1",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "eslint-plugin-simple-import-sort": "^12.1.1",
+    "globals": "^16.5.0",
+    "prettier": "^3.7.4",
     "typescript": "^5.0.0"
   }
 }
