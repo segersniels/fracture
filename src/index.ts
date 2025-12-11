@@ -1,4 +1,4 @@
-import { search, select } from "@inquirer/prompts";
+import { search } from "@inquirer/prompts";
 import { program } from "commander";
 import { existsSync, readdirSync } from "fs";
 import { homedir } from "os";
@@ -368,16 +368,22 @@ async function enter(name?: string): Promise<void> {
   if (name) {
     selected = name;
   } else {
+    const worktrees = getWorktreesById(repoName);
     try {
-      selected = await select({
+      selected = await search({
         message: "Select fracture to enter",
-        choices: (() => {
-          const worktrees = getWorktreesById(repoName);
-          return fractures.map((id) => {
-            const branch = worktrees.get(id) ?? "unknown";
-            return { name: `${id} <${branch}>`, value: id };
-          });
-        })(),
+        source: (input) => {
+          const term = input?.toLowerCase() || "";
+          return fractures
+            .filter((id) => {
+              const branch = worktrees.get(id) ?? "unknown";
+              return id.includes(term) || branch.toLowerCase().includes(term);
+            })
+            .map((id) => {
+              const branch = worktrees.get(id) ?? "unknown";
+              return { name: `${id} <${branch}>`, value: id };
+            });
+        },
       });
     } catch {
       process.exit(0);
@@ -465,16 +471,22 @@ async function deleteFracture(
   if (name) {
     selected = name;
   } else {
+    const worktrees = getWorktreesById(repoName);
     try {
-      selected = await select({
+      selected = await search({
         message: "Select fracture to delete",
-        choices: (() => {
-          const worktrees = getWorktreesById(repoName);
-          return fractures.map((id) => {
-            const branch = worktrees.get(id) ?? "unknown";
-            return { name: `${id} <${branch}>`, value: id };
-          });
-        })(),
+        source: (input) => {
+          const term = input?.toLowerCase() || "";
+          return fractures
+            .filter((id) => {
+              const branch = worktrees.get(id) ?? "unknown";
+              return id.includes(term) || branch.toLowerCase().includes(term);
+            })
+            .map((id) => {
+              const branch = worktrees.get(id) ?? "unknown";
+              return { name: `${id} <${branch}>`, value: id };
+            });
+        },
       });
     } catch {
       process.exit(0);
