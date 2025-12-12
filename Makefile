@@ -1,5 +1,5 @@
 BINARY_NAME=fracture
-INSTALL_PATH=/usr/local/bin
+INSTALL_PATH=~/.local/bin
 VERSION ?= $(shell date +%Y%m%d%H%M%S)
 
 PLATFORMS = darwin-arm64 linux-arm64 linux-x64
