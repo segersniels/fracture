@@ -74,7 +74,7 @@ async function create(newBranch?: string) {
   }
 
   using status = new Shimmer();
-  status.update("Preparing your fracture...");
+  status.update("Preparing your fracture…");
 
   let fracture: Fracture;
   try {
@@ -85,7 +85,7 @@ async function create(newBranch?: string) {
     process.exit(1);
   }
 
-  status.update("Copying environment files...");
+  status.update("Copying environment files…");
   await fracture.copyEnvFiles();
 
   const error = await fracture.installDeps(status);
@@ -175,7 +175,7 @@ async function deleteFracture(
     }
   }
 
-  status.update("Deleting fracture...");
+  status.update("Deleting fracture…");
   const error = await fracture.delete(options?.force);
   status.stop();
 
