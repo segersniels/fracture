@@ -13,21 +13,29 @@ const SHIMMER_COLORS = [
   rgb(...BASE_BLUE), // base blue (#69bee9)
 ];
 
-export function shimmer(initialText: string): {
-  update: (text: string) => void;
-  stop: () => void;
-} {
-  let offset = 0;
-  let currentText = initialText;
-  let prevLength = initialText.length;
-  const width = SHIMMER_COLORS.length;
+export default class Shimmer implements Disposable {
+  private interval: ReturnType<typeof setInterval> | null = null;
+  private currentText = "";
+  private prevLength = 0;
+  private offset = 0;
 
-  const interval = setInterval(() => {
-    const colored = currentText
+  public update(text: string): void {
+    this.currentText = text;
+
+    if (!this.interval) {
+      this.render();
+      this.start();
+    }
+  }
+
+  private render(): void {
+    const width = SHIMMER_COLORS.length;
+    const colored = this.currentText
       .split("")
       .map((char, i) => {
         const pos =
-          (i - offset + currentText.length * 100) % currentText.length;
+          (i - this.offset + this.currentText.length * 100) %
+          this.currentText.length;
         if (pos < width) {
           return SHIMMER_COLORS[pos](char);
         }
@@ -37,21 +45,27 @@ export function shimmer(initialText: string): {
       .join("");
 
     const padding =
-      prevLength > currentText.length
-        ? " ".repeat(prevLength - currentText.length)
+      this.prevLength > this.currentText.length
+        ? " ".repeat(this.prevLength - this.currentText.length)
         : "";
     process.stdout.write(`\r${colored}${padding}`);
-    prevLength = currentText.length;
-    offset = (offset + 1) % currentText.length;
-  }, 50);
+    this.prevLength = this.currentText.length;
+    this.offset = (this.offset + 1) % this.currentText.length;
+  }
 
-  return {
-    update: (text: string) => {
-      currentText = text;
-    },
-    stop: () => {
-      clearInterval(interval);
-      process.stdout.write("\r" + " ".repeat(prevLength) + "\r");
-    },
-  };
+  public stop(): void {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+      process.stdout.write("\r" + " ".repeat(this.prevLength) + "\r");
+    }
+  }
+
+  public [Symbol.dispose](): void {
+    this.stop();
+  }
+
+  private start(): void {
+    this.interval = setInterval(() => this.render(), 50);
+  }
 }
