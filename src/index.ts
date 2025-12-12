@@ -533,7 +533,7 @@ program
 
 program
   .command("delete [name]")
-  .description("Delete a fracture and its associated branch")
+  .description("Delete a fracture")
   .option("-f, --force", "force delete even with uncommitted changes")
   .option("-a, --all", "delete all fractures")
   .action(
