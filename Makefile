@@ -16,10 +16,10 @@ $(BINARY_NAME)-%: src/index.ts
 build-release: $(RELEASE_BINARIES)
 
 install: build
-	sudo mv $(BINARY_NAME) $(INSTALL_PATH)/$(BINARY_NAME)
+	mv $(BINARY_NAME) $(INSTALL_PATH)/$(BINARY_NAME)
 
 uninstall:
-	sudo rm -f $(INSTALL_PATH)/$(BINARY_NAME)
+	rm -f $(INSTALL_PATH)/$(BINARY_NAME)
 
 clean:
 	rm -f $(BINARY_NAME) $(RELEASE_BINARIES)
