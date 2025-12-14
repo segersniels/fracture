@@ -230,4 +230,16 @@ program
     }
   );
 
+program
+  .command("update")
+  .description("Update fracture to the latest version")
+  .action(async () => {
+    const proc = Bun.spawn(
+      ["bash", "-c", "curl -fsSL https://raw.githubusercontent.com/segersniels/fracture/master/install.sh | bash"],
+      { stdin: "inherit", stdout: "inherit", stderr: "inherit" }
+    );
+    const exitCode = await proc.exited;
+    process.exit(exitCode);
+  });
+
 program.parse();
