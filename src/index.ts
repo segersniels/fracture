@@ -89,12 +89,12 @@ async function create(newBranch?: string) {
   await fracture.copyEnvFiles();
 
   const error = await fracture.installDeps(status);
-  status.stop();
-
   if (error) {
     console.error("failed to install dependencies:");
     console.error(error);
   }
+
+  status.stop();
 
   await fracture.enter();
 }

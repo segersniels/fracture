@@ -106,12 +106,8 @@ export default class Fracture {
     if (!isNode && !isRust && !isGo) {
       return null;
     }
-    if (isNode) {
-      status.update("Flibbertigibbeting modules…");
-      await this.copyNodeModules();
-    }
 
-    status.update("Arranging dependencies…");
+    status.update("Flibbertigibbeting dependencies…");
 
     if (isNode) {
       return this.installNodeDeps();
@@ -126,23 +122,6 @@ export default class Fracture {
     }
 
     return null;
-  }
-
-  private async copyNodeModules() {
-    const src = join(this.repository.root, "node_modules");
-    const dst = join(this.path, "node_modules");
-
-    if (!existsSync(src)) {
-      return;
-    }
-
-    const cpArgs =
-      process.platform === "darwin"
-        ? ["cp", "-Rc", src, dst]
-        : ["cp", "-R", src, dst];
-
-    const proc = Bun.spawn(cpArgs, { stdin: "ignore" });
-    await proc.exited;
   }
 
   private async installNodeDeps() {
