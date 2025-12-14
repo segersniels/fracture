@@ -1,5 +1,6 @@
 import { search } from "@inquirer/prompts";
 import { program } from "commander";
+import pc from "picocolors";
 
 import Fracture from "./fracture";
 import Repository from "./repository";
@@ -84,17 +85,20 @@ async function create(newBranch?: string) {
     console.error(err instanceof Error ? err.message : err);
     process.exit(1);
   }
+  status.complete("Fracture created");
 
   status.update("Copying environment files…");
   await fracture.copyEnvFiles();
+  status.complete("Environment files copied");
 
   const error = await fracture.installDeps(status);
   if (error) {
+    status.stop();
     console.error("failed to install dependencies:");
     console.error(error);
+  } else {
+    status.complete("Dependencies installed");
   }
-
-  status.stop();
 
   await fracture.enter();
 }
@@ -184,7 +188,7 @@ async function deleteFracture(
     process.exit(1);
   }
 
-  console.info(`deleted ${fracture.id}`);
+  console.info(`${pc.green("✔")} Deleted ${fracture.id}`);
 }
 
 program

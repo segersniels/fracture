@@ -1,3 +1,5 @@
+import pc from "picocolors";
+
 const rgb = (r: number, g: number, b: number) => (s: string) =>
   `\x1b[38;2;${r};${g};${b}m${s}\x1b[0m`;
 
@@ -51,6 +53,17 @@ export default class Shimmer implements Disposable {
     process.stdout.write(`\r${colored}${padding}`);
     this.prevLength = this.currentText.length;
     this.offset = (this.offset + 1) % this.currentText.length;
+  }
+
+  public complete(message: string): void {
+    if (this.interval) {
+      clearInterval(this.interval);
+      this.interval = null;
+    }
+
+    process.stdout.write("\r" + " ".repeat(this.prevLength) + "\r");
+    console.info(`${pc.green("✔")} ${message}`);
+    this.prevLength = 0;
   }
 
   public stop(): void {
