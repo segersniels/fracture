@@ -26,5 +26,5 @@ clean:
 
 publish: build-release
 	-gh release delete latest --yes 2>/dev/null
-	gh release create latest --title "Latest" --notes "$$(./scripts/release-notes.sh)" $(RELEASE_BINARIES)
+	gh release create latest --target "$$(git rev-parse HEAD)" --title "Latest" --notes "$$(./scripts/release-notes.sh)" $(RELEASE_BINARIES)
 	rm -f $(RELEASE_BINARIES)
