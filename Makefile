@@ -25,8 +25,6 @@ clean:
 	rm -f $(BINARY_NAME) $(RELEASE_BINARIES)
 
 publish: build-release
-	@if ! gh release view latest >/dev/null 2>&1; then \
-		gh release create latest --title "Latest" --notes "Latest release"; \
-	fi
-	gh release upload latest $(RELEASE_BINARIES) --clobber
+	-gh release delete latest --yes 2>/dev/null
+	gh release create latest --title "Latest" --notes "$$(./scripts/release-notes.sh)" $(RELEASE_BINARIES)
 	rm -f $(RELEASE_BINARIES)
