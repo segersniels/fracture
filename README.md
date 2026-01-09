@@ -35,6 +35,9 @@ fracture
 # Create a new worktree with a new branch off current HEAD
 fracture -b my-feature
 
+# Create a new worktree without installing dependencies
+fracture --skip-install
+
 # List all active worktrees
 fracture ls
 

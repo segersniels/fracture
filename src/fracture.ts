@@ -1,4 +1,4 @@
-import { existsSync } from "fs";
+import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 
 import type Repository from "./repository";
@@ -11,6 +11,10 @@ const PACKAGE_MANAGERS: Record<string, string[]> = {
   "bun.lockb": ["bun", "install"],
   "bun.lock": ["bun", "install"],
 };
+
+const NODE_VERSION_FILES = [".nvmrc", ".node-version", ".tool-versions"] as const;
+
+type NodeVersionManager = "fnm" | "nvm" | "n";
 
 export default class Fracture {
   public readonly id: string;
@@ -133,7 +137,8 @@ export default class Fracture {
       }
     }
 
-    const proc = Bun.spawn(cmd, {
+    const installCmd = this.buildNodeInstallCommand(cmd);
+    const proc = Bun.spawn(installCmd, {
       cwd: this.path,
       stdin: "ignore",
       stdout: "pipe",
@@ -146,6 +151,118 @@ export default class Fracture {
     }
 
     return null;
+  }
+
+  private buildNodeInstallCommand(cmd: string[]) {
+    const version = this.readNodeVersion();
+    if (!version) {
+      return cmd;
+    }
+
+    const manager = this.detectNodeVersionManager();
+    if (!manager) {
+      return cmd;
+    }
+
+    if (manager === "fnm") {
+      return ["fnm", "exec", "--using", version, "--", ...cmd];
+    }
+
+    if (manager === "n") {
+      return ["n", "exec", version, ...cmd];
+    }
+
+    const nvm = this.buildNvmCommand(version, cmd);
+    return nvm ?? cmd;
+  }
+
+  private readNodeVersion() {
+    for (const filename of NODE_VERSION_FILES) {
+      const fullPath = join(this.path, filename);
+      if (!existsSync(fullPath)) {
+        continue;
+      }
+
+      const raw = readFileSync(fullPath, "utf8").trim();
+      if (!raw) {
+        continue;
+      }
+
+      if (filename === ".tool-versions") {
+        const line = raw
+          .split(/\r?\n/)
+          .find((entry) => entry.trim().startsWith("nodejs "));
+        if (!line) {
+          continue;
+        }
+        const [, version] = line.trim().split(/\s+/);
+        if (version) {
+          return version;
+        }
+        continue;
+      }
+
+      return raw;
+    }
+
+    return null;
+  }
+
+  private detectNodeVersionManager(): NodeVersionManager | null {
+    if (Bun.which("fnm")) {
+      return "fnm";
+    }
+
+    if (this.hasNvm()) {
+      return "nvm";
+    }
+
+    if (Bun.which("n")) {
+      return "n";
+    }
+
+    return null;
+  }
+
+  private hasNvm() {
+    const nvmDir =
+      process.env.NVM_DIR ||
+      (process.env.HOME ? join(process.env.HOME, ".nvm") : null);
+    if (!nvmDir) {
+      return false;
+    }
+
+    return existsSync(join(nvmDir, "nvm.sh"));
+  }
+
+  private buildNvmCommand(version: string, cmd: string[]) {
+    const nvmDir =
+      process.env.NVM_DIR ||
+      (process.env.HOME ? join(process.env.HOME, ".nvm") : null);
+    if (!nvmDir) {
+      return null;
+    }
+
+    const nvmScript = join(nvmDir, "nvm.sh");
+    if (!existsSync(nvmScript)) {
+      return null;
+    }
+
+    const shell = existsSync("/bin/bash")
+      ? "/bin/bash"
+      : process.env.SHELL || "/bin/sh";
+    const command = [
+      `. ${this.escapeShellArg(nvmScript)}`,
+      `nvm exec ${this.escapeShellArg(version)} ${cmd
+        .map((part) => this.escapeShellArg(part))
+        .join(" ")}`,
+    ].join(" && ");
+
+    return [shell, "-lc", command];
+  }
+
+  private escapeShellArg(value: string) {
+    return `'${value.replace(/'/g, `'\\''`)}'`;
   }
 
   private async installRustDeps() {

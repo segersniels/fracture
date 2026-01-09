@@ -60,7 +60,10 @@ async function selectFracture(fractures: Fracture[], message: string) {
   });
 }
 
-async function create(newBranch?: string) {
+async function create(
+  newBranch?: string,
+  options?: { skipInstall?: boolean }
+) {
   const repo = await requireRepo();
 
   let branch: string;
@@ -91,13 +94,23 @@ async function create(newBranch?: string) {
   await fracture.copyEnvFiles();
   status.complete("Environment files copied");
 
-  const error = await fracture.installDeps(status);
-  if (error) {
-    status.stop();
-    console.error("failed to install dependencies:");
-    console.error(error);
+  const skipInstall =
+    options?.skipInstall ||
+    ["1", "true", "yes"].includes(
+      (process.env.FRACTURE_SKIP_INSTALL || "").toLowerCase()
+    );
+
+  if (skipInstall) {
+    status.complete("Dependency install skipped");
   } else {
-    status.complete("Dependencies installed");
+    const error = await fracture.installDeps(status);
+    if (error) {
+      status.stop();
+      console.error("failed to install dependencies:");
+      console.error(error);
+    } else {
+      status.complete("Dependencies installed");
+    }
   }
 
   await fracture.enter();
@@ -197,8 +210,9 @@ program
     "Quickly create git worktrees to work on multiple branches simultaneously"
   )
   .option("-b, --branch <name>", "create a new branch with this name")
+  .option("-s, --skip-install", "skip dependency installation")
   .action(async (options) => {
-    await create(options.branch);
+    await create(options.branch, { skipInstall: options.skipInstall });
   });
 
 program
