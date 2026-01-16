@@ -25,6 +25,9 @@ clean:
 	rm -f $(BINARY_NAME) $(RELEASE_BINARIES)
 
 publish: build-release
+	$(eval PREV_SHA := $(shell gh release view latest --json targetCommitish -q '.targetCommitish' 2>/dev/null))
 	-gh release delete latest --yes 2>/dev/null
-	gh release create latest --target "$$(git rev-parse HEAD)" --title "Latest" --notes "$$(./scripts/release-notes.sh)" $(RELEASE_BINARIES)
+	gh release create latest --target "$$(git rev-parse HEAD)" --title "Latest" \
+		--notes "$$(if [ -n '$(PREV_SHA)' ]; then git log $(PREV_SHA)..HEAD --oneline; else echo 'Initial release'; fi)" \
+		$(RELEASE_BINARIES)
 	rm -f $(RELEASE_BINARIES)
