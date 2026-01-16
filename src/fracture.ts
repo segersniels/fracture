@@ -12,7 +12,11 @@ const PACKAGE_MANAGERS: Record<string, string[]> = {
   "bun.lock": ["bun", "install"],
 };
 
-const NODE_VERSION_FILES = [".nvmrc", ".node-version", ".tool-versions"] as const;
+const NODE_VERSION_FILES = [
+  ".nvmrc",
+  ".node-version",
+  ".tool-versions",
+] as const;
 
 type NodeVersionManager = "fnm" | "nvm" | "n";
 

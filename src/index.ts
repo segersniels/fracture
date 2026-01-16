@@ -61,14 +61,25 @@ async function selectFracture(fractures: Fracture[], message: string) {
 }
 
 async function create(
+  existingBranch?: string,
   newBranch?: string,
   options?: { skipInstall?: boolean }
 ) {
   const repo = await requireRepo();
 
   let branch: string;
+  let isNewBranch = false;
+
   if (newBranch) {
     branch = newBranch;
+    isNewBranch = true;
+  } else if (existingBranch) {
+    const branches = await repo.getBranches();
+    if (!branches.includes(existingBranch)) {
+      console.error(`branch "${existingBranch}" not found`);
+      process.exit(1);
+    }
+    branch = existingBranch;
   } else {
     try {
       branch = await selectBranch(repo);
@@ -82,7 +93,7 @@ async function create(
 
   let fracture: Fracture;
   try {
-    fracture = await repo.createFracture(branch, !!newBranch);
+    fracture = await repo.createFracture(branch, isNewBranch);
   } catch (err) {
     console.error("failed to create worktree:");
     console.error(err instanceof Error ? err.message : err);
@@ -209,10 +220,11 @@ program
   .description(
     "Quickly create git worktrees to work on multiple branches simultaneously"
   )
+  .argument("[branch]", "existing branch to checkout, prompts if omitted")
   .option("-b, --branch <name>", "create a new branch with this name")
   .option("-s, --skip-install", "skip dependency installation")
-  .action(async (options) => {
-    await create(options.branch, { skipInstall: options.skipInstall });
+  .action(async (branch, options) => {
+    await create(branch, options.branch, { skipInstall: options.skipInstall });
   });
 
 program
@@ -249,7 +261,11 @@ program
   .description("Update fracture to the latest version")
   .action(async () => {
     const proc = Bun.spawn(
-      ["bash", "-c", "curl -fsSL https://raw.githubusercontent.com/segersniels/fracture/master/install.sh | bash"],
+      [
+        "bash",
+        "-c",
+        "curl -fsSL https://raw.githubusercontent.com/segersniels/fracture/master/install.sh | bash",
+      ],
       { stdin: "inherit", stdout: "inherit", stderr: "inherit" }
     );
     const exitCode = await proc.exited;
