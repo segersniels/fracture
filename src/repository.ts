@@ -120,9 +120,18 @@ export default class Repository {
     return map;
   }
 
+  private buildFractureId(branch: string) {
+    return branch.replaceAll(/[\/_]+/g, "-");
+  }
+
   public async createFracture(branch: string, isNewBranch = false) {
-    const id = Date.now().toString();
+    const id = this.buildFractureId(branch);
     const path = join(this.fracturesDir, id);
+    if (existsSync(path)) {
+      throw new Error(
+        `fracture already exists: ${id} (from branch "${branch}")`
+      );
+    }
 
     const cmd = isNewBranch
       ? ["git", "worktree", "add", "-b", branch, path]

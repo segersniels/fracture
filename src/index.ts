@@ -133,7 +133,9 @@ async function enter(name?: string) {
 
   let fracture: Fracture;
   if (name) {
-    const found = fractures.find((f) => f.id === name);
+    const found = fractures.find(
+      (f) => f.id === name || f.branch === name
+    );
     if (!found) {
       console.error("fracture not found");
       process.exit(1);
@@ -189,7 +191,9 @@ async function deleteFracture(
 
   let fracture: Fracture;
   if (name) {
-    const found = fractures.find((f) => f.id === name);
+    const found = fractures.find(
+      (f) => f.id === name || f.branch === name
+    );
     if (!found) {
       console.error("fracture not found");
       process.exit(1);

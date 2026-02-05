@@ -54,7 +54,7 @@ fracture delete -f  # force delete with uncommitted changes
 Fracture wraps `git worktree` with a simpler interface. When you run `fracture`:
 
 1. Select a branch (type to search)
-2. A worktree is created at `~/.fracture/<repo>/<id>/`
+2. A worktree is created at `~/.fracture/<repo>/<branch>/` (slashes/underscores become `-`)
 3. `.env` files are copied from your source
 4. Dependencies are installed (Node.js, Rust, Go)
 5. You're dropped into a subshell in the new directory

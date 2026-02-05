@@ -39,7 +39,15 @@ export default class Fracture {
   }
 
   public get displayName() {
-    return `${this.id} <${this.branch}>`;
+    if (this.branch === "unknown") {
+      return this.id;
+    }
+
+    if (this.id === this.branch) {
+      return this.branch;
+    }
+
+    return `${this.branch} <${this.id}>`;
   }
 
   public async enter() {
