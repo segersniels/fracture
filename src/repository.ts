@@ -121,7 +121,63 @@ export default class Repository {
   }
 
   private buildFractureId(branch: string) {
-    return branch.replaceAll(/[\/_]+/g, "-");
+    return branch.replaceAll(/[/_]+/g, "-");
+  }
+
+  private async hasUpstream(branch: string) {
+    const remoteResult = await exec(
+      ["git", "config", "--get", `branch.${branch}.remote`],
+      {
+        cwd: this.root,
+      }
+    );
+
+    if (!remoteResult.success || !remoteResult.stdout) {
+      return false;
+    }
+
+    const mergeResult = await exec(
+      ["git", "config", "--get", `branch.${branch}.merge`],
+      {
+        cwd: this.root,
+      }
+    );
+
+    return mergeResult.success && Boolean(mergeResult.stdout);
+  }
+
+  private async hasOriginRemoteBranch(branch: string) {
+    const result = await exec(
+      [
+        "git",
+        "show-ref",
+        "--verify",
+        "--quiet",
+        `refs/remotes/origin/${branch}`,
+      ],
+      {
+        cwd: this.root,
+      }
+    );
+
+    return result.success;
+  }
+
+  private async trySetUpstream(branch: string) {
+    if (await this.hasUpstream(branch)) {
+      return;
+    }
+
+    if (!(await this.hasOriginRemoteBranch(branch))) {
+      return;
+    }
+
+    await exec(
+      ["git", "branch", "--set-upstream-to", `origin/${branch}`, branch],
+      {
+        cwd: this.root,
+      }
+    );
   }
 
   public async createFracture(branch: string, isNewBranch = false) {
@@ -140,6 +196,10 @@ export default class Repository {
     const result = await exec(cmd, { cwd: this.root });
     if (!result.success) {
       throw new Error(result.stderr);
+    }
+
+    if (!isNewBranch) {
+      await this.trySetUpstream(branch);
     }
 
     return new Fracture(id, path, branch, this);
