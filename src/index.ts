@@ -248,6 +248,7 @@ program
 
 program
   .command("delete [name]")
+  .alias("rm")
   .description("Delete a fracture")
   .option("-f, --force", "force delete even with uncommitted changes")
   .option("-a, --all", "delete all fractures")
