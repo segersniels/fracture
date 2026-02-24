@@ -43,11 +43,7 @@ export default class Fracture {
       return this.id;
     }
 
-    if (this.id === this.branch) {
-      return this.branch;
-    }
-
-    return `${this.branch} <${this.id}>`;
+    return this.branch;
   }
 
   public async enter() {
