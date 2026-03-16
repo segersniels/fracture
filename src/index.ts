@@ -63,7 +63,7 @@ async function selectFracture(fractures: Fracture[], message: string) {
 async function create(
   existingBranch?: string,
   newBranch?: string,
-  options?: { skipInstall?: boolean }
+  options?: { skipInstall?: boolean; noSpawn?: boolean }
 ) {
   const repo = await requireRepo();
 
@@ -124,6 +124,11 @@ async function create(
     }
   }
 
+  if (options?.noSpawn) {
+    console.info(`Fracture ready at ${fracture.path}`);
+    return;
+  }
+
   await fracture.enter();
 }
 
@@ -133,9 +138,7 @@ async function enter(name?: string) {
 
   let fracture: Fracture;
   if (name) {
-    const found = fractures.find(
-      (f) => f.id === name || f.branch === name
-    );
+    const found = fractures.find((f) => f.id === name || f.branch === name);
     if (!found) {
       console.error("fracture not found");
       process.exit(1);
@@ -191,9 +194,7 @@ async function deleteFracture(
 
   let fracture: Fracture;
   if (name) {
-    const found = fractures.find(
-      (f) => f.id === name || f.branch === name
-    );
+    const found = fractures.find((f) => f.id === name || f.branch === name);
     if (!found) {
       console.error("fracture not found");
       process.exit(1);
@@ -226,9 +227,13 @@ program
   )
   .argument("[branch]", "existing branch to checkout, prompts if omitted")
   .option("-b, --branch <name>", "create a new branch with this name")
+  .option("--no-spawn", "create the fracture without spawning a subshell")
   .option("-s, --skip-install", "skip dependency installation")
   .action(async (branch, options) => {
-    await create(branch, options.branch, { skipInstall: options.skipInstall });
+    await create(branch, options.branch, {
+      skipInstall: options.skipInstall,
+      noSpawn: !options.spawn,
+    });
   });
 
 program

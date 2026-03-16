@@ -38,6 +38,9 @@ fracture -b my-feature
 # Create a new worktree without installing dependencies
 fracture --skip-install
 
+# Create a new worktree without spawning a subshell
+fracture --no-spawn
+
 # List all active worktrees
 fracture ls
 
