@@ -7,6 +7,18 @@ import { exec } from "./utils/exec";
 
 const FRACTURE_DIR = ".fracture";
 
+export class FractureExistsError extends Error {
+  public readonly id: string;
+  public readonly branch: string;
+
+  public constructor(id: string, branch: string) {
+    super(`fracture already exists: ${id} (from branch "${branch}")`);
+    this.name = "FractureExistsError";
+    this.id = id;
+    this.branch = branch;
+  }
+}
+
 export default class Repository {
   public readonly name: string;
   public readonly root: string;
@@ -184,9 +196,7 @@ export default class Repository {
     const id = this.buildFractureId(branch);
     const path = join(this.fracturesDir, id);
     if (existsSync(path)) {
-      throw new Error(
-        `fracture already exists: ${id} (from branch "${branch}")`
-      );
+      throw new FractureExistsError(id, branch);
     }
 
     const cmd = isNewBranch

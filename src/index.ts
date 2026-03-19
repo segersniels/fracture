@@ -3,7 +3,7 @@ import { program } from "commander";
 import pc from "picocolors";
 
 import Fracture from "./fracture";
-import Repository from "./repository";
+import Repository, { FractureExistsError } from "./repository";
 import Shimmer from "./utils/shimmer";
 
 async function requireRepo() {
@@ -95,6 +95,14 @@ async function create(
   try {
     fracture = await repo.createFracture(branch, isNewBranch);
   } catch (err) {
+    status.stop();
+
+    if (err instanceof FractureExistsError) {
+      console.error(`fracture already exists for branch "${err.branch}"`);
+      console.info(`Use \`fracture enter ${err.branch}\` to open it.`);
+      process.exit(1);
+    }
+
     console.error("failed to create worktree:");
     console.error(err instanceof Error ? err.message : err);
     process.exit(1);
