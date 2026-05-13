@@ -132,9 +132,7 @@ async function create(
   } else if (backgroundInstall) {
     const install = fracture.startInstallDeps();
     if (install) {
-      status.complete(
-        `Dependency install started in background (log: ${install.logPath})`
-      );
+      status.complete("Dependency install started in background");
     } else {
       status.complete("No dependencies to install");
     }

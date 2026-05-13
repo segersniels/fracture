@@ -17,7 +17,6 @@ const NODE_VERSION_FILES = [
   ".node-version",
   ".tool-versions",
 ] as const;
-const INSTALL_LOG_FILE = "install.log";
 
 type NodeVersionManager = "fnm" | "nvm" | "n";
 
@@ -128,21 +127,16 @@ export default class Fracture {
       return null;
     }
 
-    const logPath = join(
-      this.repository.fracturesDir,
-      `${this.id}.${INSTALL_LOG_FILE}`
-    );
-    const logFile = Bun.file(logPath);
     const proc = Bun.spawn(cmd, {
       cwd: this.path,
       detached: true,
       stdin: "ignore",
-      stdout: logFile,
-      stderr: logFile,
+      stdout: "ignore",
+      stderr: "ignore",
     });
     proc.unref();
 
-    return { logPath, pid: proc.pid };
+    return { pid: proc.pid };
   }
 
   private getInstallCommand() {
