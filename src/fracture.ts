@@ -17,6 +17,7 @@ const NODE_VERSION_FILES = [
   ".node-version",
   ".tool-versions",
 ] as const;
+const INSTALL_LOG_FILE = "install.log";
 
 type NodeVersionManager = "fnm" | "nvm" | "n";
 
@@ -111,32 +112,56 @@ export default class Fracture {
   }
 
   public async installDeps(status: Shimmer) {
-    const isNode = existsSync(join(this.path, "package.json"));
-    const isRust = existsSync(join(this.path, "Cargo.toml"));
-    const isGo = existsSync(join(this.path, "go.mod"));
-
-    if (!isNode && !isRust && !isGo) {
+    const cmd = this.getInstallCommand();
+    if (!cmd) {
       return null;
     }
 
     status.update("Flibbertigibbeting dependencies…");
 
-    if (isNode) {
-      return this.installNodeDeps();
+    return this.runInstallCommand(cmd);
+  }
+
+  public startInstallDeps() {
+    const cmd = this.getInstallCommand();
+    if (!cmd) {
+      return null;
     }
 
-    if (isRust) {
-      return this.installRustDeps();
+    const logPath = join(
+      this.repository.fracturesDir,
+      `${this.id}.${INSTALL_LOG_FILE}`
+    );
+    const logFile = Bun.file(logPath);
+    const proc = Bun.spawn(cmd, {
+      cwd: this.path,
+      detached: true,
+      stdin: "ignore",
+      stdout: logFile,
+      stderr: logFile,
+    });
+    proc.unref();
+
+    return { logPath, pid: proc.pid };
+  }
+
+  private getInstallCommand() {
+    if (existsSync(join(this.path, "package.json"))) {
+      return this.getNodeInstallCommand();
     }
 
-    if (isGo) {
-      return this.installGoDeps();
+    if (existsSync(join(this.path, "Cargo.toml"))) {
+      return ["cargo", "fetch"];
+    }
+
+    if (existsSync(join(this.path, "go.mod"))) {
+      return ["go", "mod", "download"];
     }
 
     return null;
   }
 
-  private async installNodeDeps() {
+  private getNodeInstallCommand() {
     let cmd = ["npm", "install"];
     for (const [lockfile, installCmd] of Object.entries(PACKAGE_MANAGERS)) {
       if (existsSync(join(this.path, lockfile))) {
@@ -145,8 +170,11 @@ export default class Fracture {
       }
     }
 
-    const installCmd = this.buildNodeInstallCommand(cmd);
-    const proc = Bun.spawn(installCmd, {
+    return this.buildNodeInstallCommand(cmd);
+  }
+
+  private async runInstallCommand(cmd: string[]) {
+    const proc = Bun.spawn(cmd, {
       cwd: this.path,
       stdin: "ignore",
       stdout: "pipe",
@@ -271,37 +299,5 @@ export default class Fracture {
 
   private escapeShellArg(value: string) {
     return `'${value.replace(/'/g, `'\\''`)}'`;
-  }
-
-  private async installRustDeps() {
-    const proc = Bun.spawn(["cargo", "fetch"], {
-      cwd: this.path,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const exitCode = await proc.exited;
-
-    if (exitCode !== 0) {
-      return await new Response(proc.stderr).text();
-    }
-
-    return null;
-  }
-
-  private async installGoDeps() {
-    const proc = Bun.spawn(["go", "mod", "download"], {
-      cwd: this.path,
-      stdin: "ignore",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-    const exitCode = await proc.exited;
-
-    if (exitCode !== 0) {
-      return await new Response(proc.stderr).text();
-    }
-
-    return null;
   }
 }

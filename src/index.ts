@@ -6,6 +6,10 @@ import Fracture from "./fracture";
 import Repository, { FractureExistsError } from "./repository";
 import Shimmer from "./utils/shimmer";
 
+function isTruthyEnv(value?: string) {
+  return ["1", "true", "yes"].includes((value || "").toLowerCase());
+}
+
 async function requireRepo() {
   const repo = await Repository.detect();
   if (!repo) {
@@ -63,7 +67,11 @@ async function selectFracture(fractures: Fracture[], message: string) {
 async function create(
   existingBranch?: string,
   newBranch?: string,
-  options?: { skipInstall?: boolean; noSpawn?: boolean }
+  options?: {
+    backgroundInstall?: boolean;
+    skipInstall?: boolean;
+    noSpawn?: boolean;
+  }
 ) {
   const repo = await requireRepo();
 
@@ -114,13 +122,22 @@ async function create(
   status.complete("Environment files copied");
 
   const skipInstall =
-    options?.skipInstall ||
-    ["1", "true", "yes"].includes(
-      (process.env.FRACTURE_SKIP_INSTALL || "").toLowerCase()
-    );
+    options?.skipInstall || isTruthyEnv(process.env.FRACTURE_SKIP_INSTALL);
+  const backgroundInstall =
+    options?.backgroundInstall ||
+    isTruthyEnv(process.env.FRACTURE_BACKGROUND_INSTALL);
 
   if (skipInstall) {
     status.complete("Dependency install skipped");
+  } else if (backgroundInstall) {
+    const install = fracture.startInstallDeps();
+    if (install) {
+      status.complete(
+        `Dependency install started in background (log: ${install.logPath})`
+      );
+    } else {
+      status.complete("No dependencies to install");
+    }
   } else {
     const error = await fracture.installDeps(status);
     if (error) {
@@ -235,10 +252,12 @@ program
   )
   .argument("[branch]", "existing branch to checkout, prompts if omitted")
   .option("-b, --branch <name>", "create a new branch with this name")
+  .option("--background-install", "install dependencies in the background")
   .option("--no-spawn", "create the fracture without spawning a subshell")
   .option("-s, --skip-install", "skip dependency installation")
   .action(async (branch, options) => {
     await create(branch, options.branch, {
+      backgroundInstall: options.backgroundInstall,
       skipInstall: options.skipInstall,
       noSpawn: !options.spawn,
     });
