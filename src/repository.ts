@@ -1,4 +1,5 @@
 import { existsSync, readdirSync } from "fs";
+import { rm } from "fs/promises";
 import { homedir } from "os";
 import { basename, isAbsolute, join } from "path";
 
@@ -54,6 +55,20 @@ export default class Repository {
 
   public get fracturesDir() {
     return join(homedir(), FRACTURE_DIR, this.name);
+  }
+
+  public get trashDir() {
+    return join(homedir(), FRACTURE_DIR, ".trash", this.name);
+  }
+
+  public async clearTrash() {
+    try {
+      await rm(this.trashDir, { recursive: true, force: true });
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+
+    return null;
   }
 
   public async getBranches() {

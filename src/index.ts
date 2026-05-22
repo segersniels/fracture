@@ -200,12 +200,57 @@ async function deleteFracture(
 
     // Gather errors and print after stopping shimmer to avoid overwriting the status line
     const errors: string[] = [];
+    const ready: Fracture[] = [];
+
     for (const fracture of fractures) {
-      const error = await fracture.delete(options.force);
+      const error = await fracture.prepareDelete(options.force);
       if (error) {
         errors.push(`failed to delete ${fracture.id}: ${error}`);
+      } else {
+        ready.push(fracture);
       }
     }
+
+    const moveResults = await Promise.all(
+      ready.map(async (fracture) => ({
+        fracture,
+        result: await fracture.moveToTrash(),
+      }))
+    );
+
+    const metadataReady: Array<{
+      fracture: Fracture;
+    }> = [];
+    for (const result of moveResults) {
+      if ("error" in result.result) {
+        errors.push(
+          `failed to delete ${result.fracture.id}: ${result.result.error}`
+        );
+      } else {
+        metadataReady.push({
+          fracture: result.fracture,
+        });
+      }
+    }
+
+    const worktreeResults = await Promise.all(
+      metadataReady.map(async (result) => ({
+        fracture: result.fracture,
+        error: await result.fracture.removeWorktree(options.force),
+      }))
+    );
+
+    for (const result of worktreeResults) {
+      if (result.error) {
+        errors.push(`failed to delete ${result.fracture.id}: ${result.error}`);
+      }
+    }
+
+    const trashError = await repo.clearTrash();
+    if (trashError) {
+      errors.push(`failed to clear trash: ${trashError}`);
+    }
+
     status.stop();
 
     for (const error of errors) {

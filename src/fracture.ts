@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "fs";
+import { mkdir, rename } from "fs/promises";
 import { join } from "path";
 
 import type Repository from "./repository";
@@ -67,14 +68,101 @@ export default class Fracture {
   }
 
   public async delete(force = false) {
+    const preflightError = await this.prepareDelete(force);
+    if (preflightError) {
+      return preflightError;
+    }
+
+    const moved = await this.moveToTrash();
+    if ("error" in moved) {
+      return moved.error;
+    }
+
+    const worktreeError = await this.removeWorktree(force);
+    if (worktreeError) {
+      return worktreeError;
+    }
+
+    return this.repository.clearTrash();
+  }
+
+  public async prepareDelete(force = false) {
+    const lockedError = await this.getLockedError();
+    if (lockedError) {
+      return lockedError;
+    }
+
+    if (force) {
+      return null;
+    }
+
+    const result = await exec(["git", "status", "--porcelain"], {
+      cwd: this.path,
+    });
+    if (!result.success) {
+      return result.stderr || "failed to inspect worktree";
+    }
+
+    if (result.stdout) {
+      return "contains modified or untracked files, use --force to delete it";
+    }
+
+    return null;
+  }
+
+  public async moveToTrash() {
+    const trashPath = join(
+      this.repository.trashDir,
+      `${this.id}-${process.pid}-${Date.now()}`
+    );
+
+    try {
+      await mkdir(this.repository.trashDir, { recursive: true });
+      await rename(this.path, trashPath);
+    } catch (err) {
+      return { error: err instanceof Error ? err.message : String(err) };
+    }
+
+    return { trashPath };
+  }
+
+  public async removeWorktree(force = false) {
     const cmd = ["git", "worktree", "remove", this.path];
     if (force) {
       cmd.push("--force");
     }
 
-    const result = await exec(cmd);
+    const result = await exec(cmd, { cwd: this.repository.root });
 
     return result.success ? null : result.stderr || "unknown error";
+  }
+
+  private async getLockedError() {
+    const result = await exec(["git", "worktree", "list", "--porcelain"], {
+      cwd: this.repository.root,
+    });
+    if (!result.success) {
+      return result.stderr || "failed to inspect worktrees";
+    }
+
+    let isCurrentWorktree = false;
+    for (const line of result.stdout.split("\n")) {
+      if (line.startsWith("worktree ")) {
+        isCurrentWorktree = line.slice("worktree ".length).trim() === this.path;
+        continue;
+      }
+
+      if (!isCurrentWorktree || !line.startsWith("locked")) {
+        continue;
+      }
+
+      const reason = line.slice("locked".length).trim();
+      return reason
+        ? `cannot remove a locked worktree: ${reason}`
+        : "cannot remove a locked worktree";
+    }
+
+    return null;
   }
 
   public async copyEnvFiles() {
