@@ -233,16 +233,10 @@ async function deleteFracture(
       }
     }
 
-    const worktreeResults = await Promise.all(
-      metadataReady.map(async (result) => ({
-        fracture: result.fracture,
-        error: await result.fracture.removeWorktree(options.force),
-      }))
-    );
-
-    for (const result of worktreeResults) {
-      if (result.error) {
-        errors.push(`failed to delete ${result.fracture.id}: ${result.error}`);
+    for (const result of metadataReady) {
+      const error = await result.fracture.removeWorktree(options.force);
+      if (error) {
+        errors.push(`failed to delete ${result.fracture.id}: ${error}`);
       }
     }
 
