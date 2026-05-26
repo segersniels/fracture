@@ -35,11 +35,11 @@ fracture
 # Create a new worktree with a new branch off current HEAD
 fracture -b my-feature
 
+# Create a new worktree and wait for dependency installation
+fracture --foreground-install
+
 # Create a new worktree without installing dependencies
 fracture --skip-install
-
-# Create a new worktree and install dependencies in the background
-fracture --background-install
 
 # Create a new worktree without spawning a subshell
 fracture --no-spawn
@@ -62,7 +62,7 @@ Fracture wraps `git worktree` with a simpler interface. When you run `fracture`:
 1. Select a branch (type to search)
 2. A worktree is created at `~/.fracture/<repo>/<branch>/` (slashes/underscores become `-`)
 3. `.env` files are copied from your source
-4. Dependencies are installed (Node.js, Rust, Go), or started in the background with `--background-install`
+4. Dependencies are started in the background (Node.js, Rust, Go), unless `--foreground-install` waits for them
 5. You're dropped into a subshell in the new directory
 
 Worktrees share git history, remotes, and objects with the original repo. Commits are immediately visible across all worktrees. When you're done, `exit` the shell or close the terminal.

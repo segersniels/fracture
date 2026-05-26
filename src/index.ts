@@ -68,7 +68,7 @@ async function create(
   existingBranch?: string,
   newBranch?: string,
   options?: {
-    backgroundInstall?: boolean;
+    foregroundInstall?: boolean;
     skipInstall?: boolean;
     noSpawn?: boolean;
   }
@@ -123,13 +123,13 @@ async function create(
 
   const skipInstall =
     options?.skipInstall || isTruthyEnv(process.env.FRACTURE_SKIP_INSTALL);
-  const backgroundInstall =
-    options?.backgroundInstall ||
-    isTruthyEnv(process.env.FRACTURE_BACKGROUND_INSTALL);
+  const foregroundInstall =
+    options?.foregroundInstall ||
+    isTruthyEnv(process.env.FRACTURE_FOREGROUND_INSTALL);
 
   if (skipInstall) {
     status.complete("Dependency install skipped");
-  } else if (backgroundInstall) {
+  } else if (!foregroundInstall) {
     const install = fracture.startInstallDeps();
     if (install) {
       status.complete("Dependency install started in background");
@@ -289,12 +289,12 @@ program
   )
   .argument("[branch]", "existing branch to checkout, prompts if omitted")
   .option("-b, --branch <name>", "create a new branch with this name")
-  .option("--background-install", "install dependencies in the background")
+  .option("--foreground-install", "wait for dependency installation")
   .option("--no-spawn", "create the fracture without spawning a subshell")
   .option("-s, --skip-install", "skip dependency installation")
   .action(async (branch, options) => {
     await create(branch, options.branch, {
-      backgroundInstall: options.backgroundInstall,
+      foregroundInstall: options.foregroundInstall,
       skipInstall: options.skipInstall,
       noSpawn: !options.spawn,
     });
