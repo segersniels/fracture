@@ -240,10 +240,7 @@ async function deleteFracture(
       }
     }
 
-    const trashError = await repo.clearTrash();
-    if (trashError) {
-      errors.push(`failed to clear trash: ${trashError}`);
-    }
+    repo.clearTrash();
 
     status.stop();
 

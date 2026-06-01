@@ -83,7 +83,9 @@ export default class Fracture {
       return worktreeError;
     }
 
-    return this.repository.clearTrash();
+    this.repository.clearTrash();
+
+    return null;
   }
 
   public async prepareDelete(force = false) {

@@ -1,5 +1,4 @@
 import { existsSync, readdirSync } from "fs";
-import { rm } from "fs/promises";
 import { homedir } from "os";
 import { basename, isAbsolute, join } from "path";
 
@@ -61,14 +60,18 @@ export default class Repository {
     return join(homedir(), FRACTURE_DIR, ".trash", this.name);
   }
 
-  public async clearTrash() {
+  public clearTrash() {
     try {
-      await rm(this.trashDir, { recursive: true, force: true });
-    } catch (err) {
-      return err instanceof Error ? err.message : String(err);
+      const proc = Bun.spawn(["rm", "-rf", this.trashDir], {
+        detached: true,
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      proc.unref();
+    } catch {
+      return;
     }
-
-    return null;
   }
 
   public async getBranches() {
