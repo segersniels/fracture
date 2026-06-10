@@ -49,6 +49,7 @@ fracture ls
 
 # Re-enter an existing worktree
 fracture enter
+fracture enter --no-spawn
 
 # Delete a worktree
 fracture delete

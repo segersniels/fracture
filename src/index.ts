@@ -155,7 +155,7 @@ async function create(
   await fracture.enter();
 }
 
-async function enter(name?: string) {
+async function enter(name?: string, options?: { noSpawn?: boolean }) {
   const repo = await requireRepo();
   const fractures = await requireFractures(repo);
 
@@ -173,6 +173,12 @@ async function enter(name?: string) {
     } catch {
       process.exit(0);
     }
+  }
+
+  if (options?.noSpawn) {
+    console.info(`Fracture ready at ${fracture.path}`);
+
+    return;
   }
 
   await fracture.enter();
@@ -308,8 +314,9 @@ program
 program
   .command("enter [name]")
   .description("Enter an existing fracture")
-  .action(async (name: string | undefined) => {
-    await enter(name);
+  .option("--no-spawn", "enter the fracture without spawning a subshell")
+  .action(async (name: string | undefined, options: { spawn?: boolean }) => {
+    await enter(name, { noSpawn: !options.spawn });
   });
 
 program
