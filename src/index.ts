@@ -131,6 +131,7 @@ async function create(
     status.complete("Dependency install skipped");
   } else if (!foregroundInstall) {
     const install = fracture.startInstallDeps();
+
     if (install) {
       status.complete("Dependency install started in background");
     } else {
@@ -138,6 +139,7 @@ async function create(
     }
   } else {
     const error = await fracture.installDeps(status);
+
     if (error) {
       status.stop();
       console.error("failed to install dependencies:");

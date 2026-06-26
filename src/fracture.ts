@@ -200,10 +200,41 @@ export default class Fracture {
     }
   }
 
+  public async copyNodeModules() {
+    if (!this.hasNodeModulesToCopy()) {
+      return false;
+    }
+
+    const src = join(this.repository.root, "node_modules");
+    const dst = join(this.path, "node_modules");
+
+    const proc = Bun.spawn(["cp", "-R", src, dst], {
+      stdin: "ignore",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+    const exitCode = await proc.exited;
+
+    if (exitCode !== 0) {
+      return (await new Response(proc.stderr).text()) || "unknown error";
+    }
+
+    return true;
+  }
+
   public async installDeps(status: Shimmer) {
     const cmd = this.getInstallCommand();
     if (!cmd) {
       return null;
+    }
+
+    if (this.hasNodeModulesToCopy()) {
+      status.update("Copying node_modules…");
+      const copiedNodeModules = await this.copyNodeModules();
+
+      if (typeof copiedNodeModules === "string") {
+        return `failed to copy node_modules:\n${copiedNodeModules}`;
+      }
     }
 
     status.update("Flibbertigibbeting dependencies…");
@@ -217,7 +248,12 @@ export default class Fracture {
       return null;
     }
 
-    const proc = Bun.spawn(cmd, {
+    const copyCmd = this.getNodeModulesCopyCommand();
+    const installCmd = copyCmd
+      ? [this.getShell(), "-lc", `${copyCmd} && ${this.escapeCommand(cmd)}`]
+      : cmd;
+
+    const proc = Bun.spawn(installCmd, {
       cwd: this.path,
       detached: true,
       stdin: "ignore",
@@ -227,6 +263,32 @@ export default class Fracture {
     proc.unref();
 
     return { pid: proc.pid };
+  }
+
+  private getNodeModulesCopyCommand() {
+    if (!this.hasNodeModulesToCopy()) {
+      return null;
+    }
+
+    const src = join(this.repository.root, "node_modules");
+    const dst = join(this.path, "node_modules");
+
+    return `cp -R ${this.escapeShellArg(src)} ${this.escapeShellArg(dst)}`;
+  }
+
+  private hasNodeModulesToCopy() {
+    const src = join(this.repository.root, "node_modules");
+    const dst = join(this.path, "node_modules");
+
+    if (
+      !existsSync(src) ||
+      !existsSync(join(this.path, "package.json")) ||
+      existsSync(dst)
+    ) {
+      return false;
+    }
+
+    return true;
   }
 
   private getInstallCommand() {
@@ -368,9 +430,6 @@ export default class Fracture {
       return null;
     }
 
-    const shell = existsSync("/bin/bash")
-      ? "/bin/bash"
-      : process.env.SHELL || "/bin/sh";
     const command = [
       `. ${this.escapeShellArg(nvmScript)}`,
       `nvm exec ${this.escapeShellArg(version)} ${cmd
@@ -378,7 +437,17 @@ export default class Fracture {
         .join(" ")}`,
     ].join(" && ");
 
-    return [shell, "-lc", command];
+    return [this.getShell(), "-lc", command];
+  }
+
+  private getShell() {
+    return existsSync("/bin/bash")
+      ? "/bin/bash"
+      : process.env.SHELL || "/bin/sh";
+  }
+
+  private escapeCommand(cmd: string[]) {
+    return cmd.map((part) => this.escapeShellArg(part)).join(" ");
   }
 
   private escapeShellArg(value: string) {
